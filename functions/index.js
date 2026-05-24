@@ -67,6 +67,22 @@ exports.deleteUserAccount = functions.runWith(runtimeOpts).https.onCall(async (d
   } catch (err) { handleError(err); }
 });
 
+exports.sendVerificationCode = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await authFns.sendVerificationCode(uid);
+  } catch (err) { handleError(err); }
+});
+
+exports.verifyEmailCode = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const { code } = data;
+  if (!code) throw new functions.https.HttpsError('invalid-argument', 'Code required');
+  try {
+    return await authFns.verifyEmailCode(uid, code);
+  } catch (err) { handleError(err); }
+});
+
 // ── MATCHING ──────────────────────────────────────────────────────────────────
 
 /** @type {functions.HttpsFunction} */
@@ -135,6 +151,14 @@ exports.deleteMessage = functions.runWith(runtimeOpts).https.onCall(async (data,
   const uid = requireAuth(context);
   try {
     return await messagingFns.deleteMessage(data.messageId, data.conversationId, uid);
+  } catch (err) { handleError(err); }
+});
+
+exports.registerPushToken = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const { token, platform } = data;
+  try {
+    return await messagingFns.registerPushToken(uid, token, platform || 'ios');
   } catch (err) { handleError(err); }
 });
 

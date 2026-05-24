@@ -193,4 +193,46 @@ async function deleteUserAccount(userId) {
   console.info(`Account deleted (GDPR): userId=${userId}`);
 }
 
-module.exports = { createUser, updateUserProfile, deleteUserAccount };
+async function sendVerificationCode(userId) {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db.collection('email_verifications').doc(userId).set({
+    code,
+    expires_at: Timestamp.fromDate(expiresAt),
+    used: false,
+    created_at: FieldValue.serverTimestamp(),
+  });
+
+  try {
+    const link = await auth.generateEmailVerificationLink(
+      (await auth.getUser(userId)).email
+    );
+    console.info(`Verification link generated for ${userId}: ${link}`);
+  } catch (e) {
+    console.warn('Could not generate Firebase verification link:', e.message);
+  }
+
+  const isDev = process.env.FUNCTIONS_EMULATOR === 'true';
+  return { success: true, ...(isDev ? { code } : {}) };
+}
+
+async function verifyEmailCode(userId, code) {
+  const ref = db.collection('email_verifications').doc(userId);
+  const doc = await ref.get();
+
+  if (!doc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'No verification code found' };
+
+  const data = doc.data();
+  if (data.used) throw { code: ERROR_CODES.INVALID_INPUT, message: 'Code already used' };
+  if (data.expires_at.toDate() < new Date()) throw { code: ERROR_CODES.INVALID_INPUT, message: 'Code expired' };
+  if (data.code !== code) throw { code: ERROR_CODES.INVALID_INPUT, message: 'Invalid code' };
+
+  await ref.update({ used: true });
+  await auth.updateUser(userId, { emailVerified: true });
+  await db.collection('users').doc(userId).update({ email_verified: true, updated_at: FieldValue.serverTimestamp() });
+
+  return { success: true };
+}
+
+module.exports = { createUser, updateUserProfile, deleteUserAccount, sendVerificationCode, verifyEmailCode };

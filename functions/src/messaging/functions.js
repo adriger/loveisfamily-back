@@ -61,6 +61,35 @@ async function sendMessage(conversationId, senderId, text, attachments = []) {
     });
   });
 
+  try {
+    const recipientId = conv.participant1_id === senderId ? conv.participant2_id : conv.participant1_id;
+    const recipientDoc = await db.collection('users').doc(recipientId).get();
+    const recipientData = recipientDoc.data();
+    const tokens = recipientData?.fcm_tokens || [];
+
+    if (tokens.length > 0) {
+      const senderDoc = await db.collection('users').doc(senderId).get();
+      const senderName = senderDoc.data()?.displayName || 'Alguien';
+
+      const notification = {
+        title: senderName,
+        body: text.length > 100 ? text.slice(0, 97) + '...' : text,
+      };
+
+      const messaging = admin.messaging();
+      await Promise.allSettled(
+        tokens.map(token => messaging.send({
+          token,
+          notification,
+          data: { conversationId, type: 'new_message' },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        }))
+      );
+    }
+  } catch (pushErr) {
+    console.warn('Push notification failed:', pushErr.message);
+  }
+
   return { messageId: msgRef.id };
 }
 
@@ -185,4 +214,16 @@ async function deleteMessage(messageId, conversationId, userId) {
   });
 }
 
-module.exports = { sendMessage, getConversations, getMessages, markAsRead, deleteMessage };
+async function registerPushToken(userId, token, platform) {
+  if (!token) throw { code: ERROR_CODES.INVALID_INPUT, message: 'Token required' };
+
+  await db.collection('users').doc(userId).update({
+    fcm_tokens: FieldValue.arrayUnion(token),
+    [`fcm_token_${platform}`]: token,
+    updated_at: FieldValue.serverTimestamp(),
+  });
+
+  return { success: true };
+}
+
+module.exports = { sendMessage, getConversations, getMessages, markAsRead, deleteMessage, registerPushToken };

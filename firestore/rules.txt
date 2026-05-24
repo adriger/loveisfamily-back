@@ -323,5 +323,11 @@ service cloud.firestore {
       allow write: if false; // Cloud Functions only
     }
 
+    // ─── EMAIL VERIFICATIONS ─────────────────────────────────────────────────
+
+    match /email_verifications/{userId} {
+      allow read, write: if false; // only accessible via Admin SDK (Cloud Functions)
+    }
+
   }
 }
