@@ -1,0 +1,22 @@
+{
+  "name": "loveisfamily-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --config tests/jest.config.js",
+    "test:unit": "jest --config tests/jest.config.js --testPathPattern=unit",
+    "test:integration": "jest --config tests/jest.config.js --testPathPattern=integration",
+    "test:coverage": "jest --config tests/jest.config.js --coverage",
+    "emulators": "firebase emulators:start",
+    "seed": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 NODE_PATH=functions/node_modules node scripts/seed-database.js",
+    "smoke": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_AUTH_EMULATOR_HOST=localhost:9099 NODE_PATH=functions/node_modules node scripts/test-functions.js",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:indexes": "firebase deploy --only firestore:indexes",
+    "deploy:all": "firebase deploy"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "@firebase/rules-unit-testing": "^3.0.0"
+  }
+}

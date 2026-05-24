@@ -1,0 +1,327 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isEmailVerified() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+
+    function getUserSubscription() {
+      return request.auth.token.subscription_type;
+    }
+
+    function isPremiumOrAbove() {
+      return getUserSubscription() == 'premium' || getUserSubscription() == 'vip';
+    }
+
+    function isVIP() {
+      return getUserSubscription() == 'vip';
+    }
+
+    function isConversationParticipant(convData) {
+      return isAuthenticated() &&
+        (request.auth.uid == convData.participant1_id ||
+         request.auth.uid == convData.participant2_id);
+    }
+
+    function isMatchParticipant(matchData) {
+      return isAuthenticated() &&
+        (request.auth.uid == matchData.user1_id ||
+         request.auth.uid == matchData.user2_id);
+    }
+
+    function isTeamMember(teamData) {
+      return isAuthenticated() &&
+        request.auth.uid in teamData.members;
+    }
+
+    function isTeamOwnerOrAdmin(teamData) {
+      return isAuthenticated()
+        && request.auth.uid in teamData.members
+        && (teamData.members[request.auth.uid].role == 'owner'
+          || teamData.members[request.auth.uid].role == 'admin');
+    }
+
+    function isWithin24Hours(ts) {
+      return ts > request.time - duration.value(86400, 's');
+    }
+
+    function notChangingField(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == resource.data[field];
+    }
+
+    function isValidSubscriptionTier(tier) {
+      return tier in ['free', 'premium', 'vip'];
+    }
+
+    function isAdult() {
+      return !('age' in request.resource.data) ||
+        request.resource.data.age >= 18;
+    }
+
+    // ─── USERS ──────────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      // Anyone authenticated can read basic public profile data
+      allow read: if isAuthenticated();
+
+      // Only owner can create their own document
+      allow create: if isOwner(userId)
+        && isEmailVerified()
+        && request.resource.data.email == request.auth.token.email
+        && isAdult()
+        && request.resource.data.keys().hasAll(['email', 'username', 'displayName'])
+        && request.resource.data.email is string
+        && request.resource.data.username is string
+        && request.resource.data.username.size() >= 3
+        && request.resource.data.username.size() <= 20;
+
+      // Owner can update — cannot change email (write-once)
+      allow update: if isOwner(userId)
+        && notChangingField('email')
+        && notChangingField('created_at')
+        && (!('age' in request.resource.data) || request.resource.data.age >= 18);
+
+      // Only owner can delete their account
+      allow delete: if isOwner(userId);
+
+      // ─── profiles subcollection ───────────────────────────────────────────
+      match /profiles/{profileId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
+      }
+
+      // ─── devices (FCM tokens) ─────────────────────────────────────────────
+      match /devices/{deviceId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ─── notification_settings ────────────────────────────────────────────
+      match /notification_settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ─── MATCHES ────────────────────────────────────────────────────────────
+
+    match /matches/{matchId} {
+      // Only participants can read
+      allow read: if isMatchParticipant(resource.data);
+
+      // Only authenticated + email verified users can create matches
+      // Cloud Functions handle rate limiting, but we enforce auth here
+      allow create: if isAuthenticated()
+        && isEmailVerified()
+        && request.resource.data.user1_id == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.user1_id != request.resource.data.user2_id;
+
+      // Only participants can update, and only specific fields
+      allow update: if isMatchParticipant(resource.data)
+        && notChangingField('user1_id')
+        && notChangingField('user2_id')
+        && notChangingField('created_at')
+        && notChangingField('match_type');
+
+      // Cannot delete matches (use status = 'rejected' or 'expired')
+      allow delete: if false;
+    }
+
+    // ─── CONVERSATIONS ───────────────────────────────────────────────────────
+
+    match /conversations/{conversationId} {
+      // Only participants can read conversation metadata
+      allow read: if isConversationParticipant(resource.data);
+
+      // Authenticated users can create (Cloud Functions manage participant validation)
+      allow create: if isAuthenticated()
+        && isEmailVerified()
+        && (request.resource.data.participant1_id == request.auth.uid ||
+            request.resource.data.participant2_id == request.auth.uid);
+
+      // Participants can update conversation metadata
+      allow update: if isConversationParticipant(resource.data)
+        && notChangingField('participant1_id')
+        && notChangingField('participant2_id')
+        && notChangingField('created_at');
+
+      // Only creator (participant1) can archive
+      allow delete: if isAuthenticated()
+        && request.auth.uid == resource.data.participant1_id;
+
+      // ─── messages subcollection ───────────────────────────────────────────
+      match /messages/{messageId} {
+        allow read: if isConversationParticipant(
+          get(/databases/$(database)/documents/conversations/$(conversationId)).data
+        );
+
+        // Only participants can send messages; sender_id must match auth UID
+        allow create: if isAuthenticated()
+          && isEmailVerified()
+          && request.resource.data.sender_id == request.auth.uid
+          && isConversationParticipant(
+            get(/databases/$(database)/documents/conversations/$(conversationId)).data
+          )
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 5000;
+
+        // Sender can edit within 24h if no read receipts; recipient can mark read
+        allow update: if isAuthenticated()
+          && (
+            // Sender editing text within 24h
+            (request.auth.uid == resource.data.sender_id
+              && isWithin24Hours(resource.data.timestamp)
+              && notChangingField('sender_id')
+              && notChangingField('timestamp'))
+            ||
+            // Recipient marking as read
+            (request.auth.uid != resource.data.sender_id
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']))
+          );
+
+        // Soft delete only, sender only
+        allow delete: if false;
+      }
+    }
+
+    // ─── POSTS ──────────────────────────────────────────────────────────────
+
+    match /posts/{postId} {
+      // Public posts readable by all authenticated users
+      allow read: if isAuthenticated()
+        && (resource.data.visibility == 'public'
+          || resource.data.author_id == request.auth.uid);
+
+      // Authenticated + email verified users can create posts
+      allow create: if isAuthenticated()
+        && isEmailVerified()
+        && request.resource.data.author_id == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.visibility in ['public', 'followers', 'private']
+        && request.resource.data.activity_type in ['sports', 'social', 'hobby'];
+
+      // Author can edit within 24h of creation
+      allow update: if isAuthenticated()
+        && request.auth.uid == resource.data.author_id
+        && isWithin24Hours(resource.data.created_at)
+        && notChangingField('author_id')
+        && notChangingField('created_at')
+        && notChangingField('likes_count')
+        && notChangingField('comments_count');
+
+      // Author can delete
+      allow delete: if isAuthenticated()
+        && request.auth.uid == resource.data.author_id;
+
+      // ─── comments subcollection ───────────────────────────────────────────
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated()
+          && isEmailVerified()
+          && request.resource.data.author_id == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000;
+        allow update: if isAuthenticated()
+          && request.auth.uid == resource.data.author_id;
+        allow delete: if isAuthenticated()
+          && (request.auth.uid == resource.data.author_id
+            || request.auth.uid == get(/databases/$(database)/documents/posts/$(postId)).data.author_id);
+      }
+
+      // ─── likes subcollection ─────────────────────────────────────────────
+      match /likes/{likeId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && likeId == request.auth.uid;
+        allow delete: if isAuthenticated() && likeId == request.auth.uid;
+        allow update: if false;
+      }
+    }
+
+    // ─── TEAMS ──────────────────────────────────────────────────────────────
+
+    match /teams/{teamId} {
+      // Members can read; public teams readable by all authenticated
+      allow read: if isAuthenticated()
+        && (resource.data.privacy_type == 'public'
+          || isTeamMember(resource.data));
+
+      // Only premium/VIP users can create teams (enforced also in Cloud Functions)
+      allow create: if isAuthenticated()
+        && isEmailVerified()
+        && isPremiumOrAbove()
+        && request.resource.data.owner_id == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0;
+
+      // Only owner/admin can update team settings
+      allow update: if isAuthenticated()
+        && isTeamOwnerOrAdmin(resource.data)
+        && notChangingField('owner_id')
+        && notChangingField('created_at');
+
+      // Only owner can delete
+      allow delete: if isAuthenticated()
+        && request.auth.uid == resource.data.owner_id;
+
+      // ─── invitations subcollection ────────────────────────────────────────
+      match /invitations/{inviteId} {
+        allow read: if isAuthenticated()
+          && (resource.data.invited_user_id == request.auth.uid
+            || isTeamMember(get(/databases/$(database)/documents/teams/$(teamId)).data));
+        allow create: if isAuthenticated()
+          && isTeamOwnerOrAdmin(get(/databases/$(database)/documents/teams/$(teamId)).data);
+        allow update: if isAuthenticated()
+          && resource.data.invited_user_id == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if false;
+      }
+    }
+
+    // ─── USER LIMITS ────────────────────────────────────────────────────────
+
+    match /user_limits/{userId} {
+      // User can read their own limits
+      allow read: if isOwner(userId);
+      // Only Cloud Functions (admin SDK) can write — block all client writes
+      allow write: if false;
+    }
+
+    // ─── MATCH CACHE ────────────────────────────────────────────────────────
+
+    match /match_cache/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ─── SUBSCRIPTION HISTORY ───────────────────────────────────────────────
+
+    match /subscription_history/{docId} {
+      allow read: if isAuthenticated()
+        && resource.data.user_id == request.auth.uid;
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ─── RATE LIMITS (internal) ──────────────────────────────────────────────
+
+    match /rate_limits/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Cloud Functions only
+    }
+
+  }
+}

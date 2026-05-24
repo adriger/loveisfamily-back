@@ -1,0 +1,220 @@
+{
+  "version": "1.0.0",
+  "collections": {
+    "users": {
+      "description": "Main user profiles",
+      "fields": {
+        "id": { "type": "string", "required": true, "description": "Firebase Auth UID" },
+        "email": { "type": "string", "required": true, "format": "email", "write_once": true },
+        "username": { "type": "string", "required": true, "unique": true, "min_length": 3, "max_length": 20, "format": "alphanumeric_underscore" },
+        "displayName": { "type": "string", "required": true, "max_length": 100 },
+        "photoURL": { "type": "string", "nullable": true, "format": "url" },
+        "bio": { "type": "string", "max_length": 500, "default": "" },
+        "interests": { "type": "array", "item_type": "string", "max_items": 20 },
+        "subscription_type": { "type": "string", "enum": ["free", "premium", "vip"], "default": "free" },
+        "subscription_end_date": { "type": "timestamp", "nullable": true },
+        "location": { "type": "geopoint", "nullable": true },
+        "age": { "type": "integer", "nullable": true, "min": 18, "max": 120 },
+        "gender": { "type": "string", "nullable": true, "max_length": 50 },
+        "created_at": { "type": "timestamp", "required": true, "auto": true },
+        "updated_at": { "type": "timestamp", "required": true, "auto": true }
+      },
+      "indexes": [
+        { "fields": ["username"], "type": "single" },
+        { "fields": ["subscription_type", "age"], "type": "composite" },
+        { "fields": ["subscription_type", "location"], "type": "composite" }
+      ],
+      "subcollections": {
+        "profiles": {
+          "description": "Extended profile data",
+          "fields": {
+            "premium_features": { "type": "array", "item_type": "string" },
+            "badges": { "type": "array", "item_type": "string" },
+            "followers_count": { "type": "integer", "default": 0 },
+            "following_count": { "type": "integer", "default": 0 },
+            "created_at": { "type": "timestamp" }
+          }
+        },
+        "devices": {
+          "description": "FCM tokens per device",
+          "fields": {
+            "device_id": { "type": "string", "required": true },
+            "platform": { "type": "string", "enum": ["ios", "android", "web"] },
+            "fcm_token": { "type": "string", "required": true },
+            "created_at": { "type": "timestamp" },
+            "last_used_at": { "type": "timestamp" }
+          }
+        },
+        "notification_settings": {
+          "fields": {
+            "messages_enabled": { "type": "boolean", "default": true },
+            "matches_enabled": { "type": "boolean", "default": true },
+            "teams_enabled": { "type": "boolean", "default": true },
+            "quiet_hours_start": { "type": "string", "default": "22:00" },
+            "quiet_hours_end": { "type": "string", "default": "08:00" }
+          }
+        }
+      }
+    },
+    "matches": {
+      "description": "Match records between users",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "user1_id": { "type": "string", "required": true, "ref": "users" },
+        "user2_id": { "type": "string", "required": true, "ref": "users" },
+        "compatibility_score": { "type": "float", "min": 0, "max": 1 },
+        "match_type": { "type": "string", "enum": ["instant", "algorithm"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "mutual_match", "rejected", "expired"] },
+        "conversation_id": { "type": "string", "nullable": true, "ref": "conversations" },
+        "created_at": { "type": "timestamp", "required": true },
+        "expires_at": { "type": "timestamp", "required": true },
+        "updated_at": { "type": "timestamp", "required": true }
+      },
+      "indexes": [
+        { "fields": ["user1_id", "created_at"], "type": "composite", "order": "desc" },
+        { "fields": ["user2_id", "created_at"], "type": "composite", "order": "desc" },
+        { "fields": ["user1_id", "user2_id"], "type": "composite" }
+      ]
+    },
+    "conversations": {
+      "description": "1-on-1 conversations between matched users",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "participant1_id": { "type": "string", "required": true, "ref": "users" },
+        "participant2_id": { "type": "string", "required": true, "ref": "users" },
+        "last_message_text": { "type": "string", "nullable": true, "max_length": 100 },
+        "last_message_timestamp": { "type": "timestamp", "nullable": true },
+        "unread_count_p1": { "type": "integer", "default": 0 },
+        "unread_count_p2": { "type": "integer", "default": 0 },
+        "created_at": { "type": "timestamp" },
+        "updated_at": { "type": "timestamp" },
+        "is_archived": { "type": "boolean", "default": false }
+      },
+      "indexes": [
+        { "fields": ["participant1_id", "last_message_timestamp"], "type": "composite", "order": "desc" },
+        { "fields": ["participant2_id", "last_message_timestamp"], "type": "composite", "order": "desc" }
+      ],
+      "subcollections": {
+        "messages": {
+          "fields": {
+            "id": { "type": "string", "required": true },
+            "sender_id": { "type": "string", "required": true, "ref": "users" },
+            "text": { "type": "string", "required": true, "max_length": 5000 },
+            "timestamp": { "type": "timestamp", "required": true },
+            "is_read": { "type": "boolean", "default": false },
+            "attachments": { "type": "array", "max_items": 10 },
+            "is_edited": { "type": "boolean", "default": false },
+            "edited_at": { "type": "timestamp", "nullable": true },
+            "is_deleted": { "type": "boolean", "default": false },
+            "reactions": { "type": "map" },
+            "encryption_key_index": { "type": "integer", "default": 0 }
+          },
+          "indexes": [
+            { "fields": ["timestamp"], "type": "single", "order": "desc" },
+            { "fields": ["sender_id", "timestamp"], "type": "composite" }
+          ]
+        }
+      }
+    },
+    "posts": {
+      "description": "Community activity posts",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "author_id": { "type": "string", "required": true, "ref": "users" },
+        "title": { "type": "string", "required": true, "max_length": 200 },
+        "description": { "type": "string", "required": true, "max_length": 5000 },
+        "images": { "type": "array", "item_type": "string", "max_items": 10 },
+        "activity_type": { "type": "string", "enum": ["sports", "social", "hobby"] },
+        "tags": { "type": "array", "item_type": "string", "max_items": 20 },
+        "likes_count": { "type": "integer", "default": 0 },
+        "comments_count": { "type": "integer", "default": 0 },
+        "location": { "type": "geopoint", "nullable": true },
+        "visibility": { "type": "string", "enum": ["public", "followers", "private"], "default": "public" },
+        "created_at": { "type": "timestamp" },
+        "updated_at": { "type": "timestamp" },
+        "is_archived": { "type": "boolean", "default": false }
+      },
+      "indexes": [
+        { "fields": ["visibility", "created_at"], "type": "composite", "order": "desc" },
+        { "fields": ["author_id", "created_at"], "type": "composite", "order": "desc" },
+        { "fields": ["activity_type", "visibility", "created_at"], "type": "composite" }
+      ],
+      "subcollections": {
+        "comments": {
+          "fields": {
+            "id": { "type": "string" },
+            "author_id": { "type": "string", "ref": "users" },
+            "text": { "type": "string", "max_length": 1000 },
+            "timestamp": { "type": "timestamp" },
+            "likes_count": { "type": "integer", "default": 0 }
+          }
+        },
+        "likes": {
+          "fields": {
+            "user_id": { "type": "string", "ref": "users" },
+            "created_at": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "teams": {
+      "description": "Activity teams/groups",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true, "max_length": 100 },
+        "owner_id": { "type": "string", "required": true, "ref": "users" },
+        "description": { "type": "string", "max_length": 2000 },
+        "members": { "type": "array", "item_type": "object", "description": "Array of {user_id, role, joined_at}" },
+        "activity_ids": { "type": "array", "item_type": "string" },
+        "created_at": { "type": "timestamp" },
+        "updated_at": { "type": "timestamp" },
+        "privacy_type": { "type": "string", "enum": ["public", "private"] },
+        "member_count": { "type": "integer", "default": 1 }
+      },
+      "subcollections": {
+        "invitations": {
+          "fields": {
+            "id": { "type": "string" },
+            "invited_user_id": { "type": "string", "ref": "users" },
+            "inviter_user_id": { "type": "string", "ref": "users" },
+            "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "expired"] },
+            "created_at": { "type": "timestamp" },
+            "expires_at": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "user_limits": {
+      "description": "Per-user feature usage counters (document ID = user UID)",
+      "fields": {
+        "matches_today": { "type": "integer", "default": 0 },
+        "teams_created_month": { "type": "integer", "default": 0 },
+        "posts_today": { "type": "integer", "default": 0 },
+        "last_match_reset_date": { "type": "timestamp" },
+        "last_team_reset_date": { "type": "timestamp" },
+        "last_post_reset_date": { "type": "timestamp" },
+        "subscription_tier": { "type": "string", "enum": ["free", "premium", "vip"] },
+        "updated_at": { "type": "timestamp" }
+      }
+    },
+    "match_cache": {
+      "description": "Pre-computed suggestion cache per user",
+      "fields": {
+        "suggestions": { "type": "array", "max_items": 100 },
+        "generated_at": { "type": "timestamp" },
+        "tier": { "type": "string" }
+      }
+    },
+    "subscription_history": {
+      "description": "Log of subscription upgrades",
+      "fields": {
+        "user_id": { "type": "string", "ref": "users" },
+        "tier": { "type": "string" },
+        "payment_id": { "type": "string" },
+        "start_date": { "type": "timestamp" },
+        "end_date": { "type": "timestamp" },
+        "created_at": { "type": "timestamp" }
+      }
+    }
+  }
+}
