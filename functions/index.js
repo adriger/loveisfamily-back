@@ -14,6 +14,7 @@ if (!admin.apps.length) {
 
 const authFns = require('./src/auth/functions');
 const authConfig = require('./src/auth/auth-config');
+const verificationFns = require('./src/auth/verification');
 const matchingFns = require('./src/matching/functions');
 const messagingFns = require('./src/messaging/functions');
 const communityFns = require('./src/community/functions');
@@ -199,6 +200,13 @@ exports.deletePost = functions.runWith(runtimeOpts).https.onCall(async (data, co
   } catch (err) { handleError(err); }
 });
 
+exports.getPostComments = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  requireAuth(context);
+  try {
+    return await communityFns.getPostComments(data.postId, data.limit, data.startAfter);
+  } catch (err) { handleError(err); }
+});
+
 // ── TEAMS ─────────────────────────────────────────────────────────────────────
 
 exports.createTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
@@ -233,6 +241,36 @@ exports.getTeamDetails = functions.runWith(runtimeOpts).https.onCall(async (data
   const uid = requireAuth(context);
   try {
     return await teamsFns.getTeamDetails(data.teamId, uid);
+  } catch (err) { handleError(err); }
+});
+
+exports.listTeams = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  requireAuth(context);
+  try {
+    return await teamsFns.listTeams(data.limit, data.startAfter, data.search);
+  } catch (err) { handleError(err); }
+});
+
+exports.joinTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await teamsFns.joinTeam(data.teamId, uid);
+  } catch (err) { handleError(err); }
+});
+
+// ── VERIFICATION ─────────────────────────────────────────────────────────────
+
+exports.submitProfileVerification = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await verificationFns.submitProfileVerification(uid, data.documentPhotoURL);
+  } catch (err) { handleError(err); }
+});
+
+exports.getVerificationStatus = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await verificationFns.getVerificationStatus(uid);
   } catch (err) { handleError(err); }
 });
 

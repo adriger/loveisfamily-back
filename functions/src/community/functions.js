@@ -154,4 +154,27 @@ async function deletePost(postId, userId) {
   await postRef.delete();
 }
 
-module.exports = { createPost, likePost, commentOnPost, getPostFeed, deletePost };
+/**
+ * Returns comments for a post ordered by timestamp descending.
+ */
+async function getPostComments(postId, limit = 50, startAfter = null) {
+  const postRef = db.collection('posts').doc(postId);
+  const postDoc = await postRef.get();
+  if (!postDoc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'Post not found' };
+
+  let query = postRef.collection('comments')
+    .orderBy('timestamp', 'desc')
+    .limit(limit + 1);
+
+  if (startAfter) {
+    const cursorDoc = await postRef.collection('comments').doc(startAfter).get();
+    if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+  }
+
+  const snap = await query.get();
+  const comments = snap.docs.slice(0, limit).map(d => d.data());
+  const nextCursor = snap.docs.length > limit ? snap.docs[limit - 1].id : null;
+  return { comments, nextCursor };
+}
+
+module.exports = { createPost, likePost, commentOnPost, getPostFeed, deletePost, getPostComments };

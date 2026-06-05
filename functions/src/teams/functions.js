@@ -139,4 +139,56 @@ async function getTeamDetails(teamId, userId) {
   return team;
 }
 
-module.exports = { createTeam, inviteToTeam, acceptTeamInvite, addActivityToTeam, getTeamDetails };
+/**
+ * Lists public teams with optional search by name.
+ */
+async function listTeams(limit = 20, startAfter = null, search = null) {
+  let query = db.collection('teams')
+    .where('privacy_type', '==', 'public')
+    .orderBy('member_count', 'desc')
+    .limit(limit + 1);
+
+  if (startAfter) {
+    const cursorDoc = await db.collection('teams').doc(startAfter).get();
+    if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+  }
+
+  const snap = await query.get();
+  let teams = snap.docs.slice(0, limit).map(d => d.data());
+
+  if (search) {
+    const q = search.toLowerCase();
+    teams = teams.filter(t => t.name.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
+  }
+
+  const nextCursor = snap.docs.length > limit ? snap.docs[limit - 1].id : null;
+  return { teams, nextCursor };
+}
+
+/**
+ * Allows a user to directly join a public team.
+ */
+async function joinTeam(teamId, userId) {
+  const teamRef = db.collection('teams').doc(teamId);
+
+  await db.runTransaction(async (t) => {
+    const teamDoc = await t.get(teamRef);
+    if (!teamDoc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'Team not found' };
+
+    const team = teamDoc.data();
+    if (team.privacy_type !== 'public') {
+      throw { code: ERROR_CODES.PERMISSION_DENIED, message: 'This team requires an invitation' };
+    }
+    if (userId in team.members) {
+      throw { code: ERROR_CODES.ALREADY_EXISTS, message: 'Already a member' };
+    }
+
+    t.update(teamRef, {
+      [`members.${userId}`]: { role: TEAM_ROLES.MEMBER, joined_at: new Date().toISOString() },
+      member_count: FieldValue.increment(1),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+  });
+}
+
+module.exports = { createTeam, inviteToTeam, acceptTeamInvite, addActivityToTeam, getTeamDetails, listTeams, joinTeam };
