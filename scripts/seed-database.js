@@ -18,7 +18,7 @@ process.env.FIRESTORE_EMULATOR_HOST  = process.env.FIRESTORE_EMULATOR_HOST  || '
 process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || 'localhost:9099';
 
 const admin = require('firebase-admin');
-const { FieldValue } = require('@google-cloud/firestore');
+const { FieldValue } = admin.firestore;
 
 if (!admin.apps.length) {
   admin.initializeApp({ projectId: 'loveisfamily-dev' });
