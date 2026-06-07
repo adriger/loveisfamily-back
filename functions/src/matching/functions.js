@@ -39,14 +39,16 @@ async function getMatchingSuggestions(userId, limit = 10) {
     return cached.slice(0, limit);
   }
 
-  // Build candidate pool — filter by age range
-  const ageMin = user.age ? user.age - tierLimits.age_range : 18;
-  const ageMax = user.age ? user.age + tierLimits.age_range : 99;
-
-  let query = db.collection('users')
-    .where('age', '>=', Math.max(18, ageMin))
-    .where('age', '<=', ageMax)
-    .limit(500);
+  // Build candidate pool — only filter by age when the current user has it set
+  let query = db.collection('users').limit(500);
+  if (user.age) {
+    const ageMin = user.age - tierLimits.age_range;
+    const ageMax = user.age + tierLimits.age_range;
+    query = db.collection('users')
+      .where('age', '>=', Math.max(18, ageMin))
+      .where('age', '<=', ageMax)
+      .limit(500);
+  }
 
   const candidatesSnap = await query.get();
 
@@ -66,7 +68,7 @@ async function getMatchingSuggestions(userId, limit = 10) {
     const candidate = doc.data();
 
     const score = computeCompatibilityScore(user, candidate, tierLimits);
-    if (score >= 0.25) {
+    if (score >= 0.1) {
       suggestions.push({
         user_id: doc.id,
         username: candidate.username,
