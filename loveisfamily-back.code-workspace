@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "loveisfamily-app",
+			"path": "../loveisfamily-app"
+		}
+	],
+	"settings": {}
+}

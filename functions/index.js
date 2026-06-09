@@ -20,6 +20,8 @@ const messagingFns = require('./src/messaging/functions');
 const communityFns = require('./src/community/functions');
 const teamsFns = require('./src/teams/functions');
 const freemiumFns = require('./src/shared/freemium');
+const servicesFns = require('./src/services/functions');
+const reportsFns = require('./src/reports/functions');
 
 const { ERROR_CODES, FUNCTION_CONFIG } = require('./src/shared/constants');
 
@@ -287,6 +289,37 @@ exports.upgradeSubscription = functions.runWith(runtimeOpts).https.onCall(async 
   const uid = requireAuth(context);
   try {
     return await freemiumFns.upgradeSubscription(uid, data.tier, data.paymentId);
+  } catch (err) { handleError(err); }
+});
+
+// ── SERVICES & RESERVATIONS ───────────────────────────────────────────────────
+
+exports.getServices = functions.runWith(runtimeOpts).https.onCall(async (data) => {
+  try {
+    return await servicesFns.getServices(data);
+  } catch (err) { handleError(err); }
+});
+
+exports.createReservation = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await servicesFns.createReservation(uid, data);
+  } catch (err) { handleError(err); }
+});
+
+exports.getUserReservations = functions.runWith(runtimeOpts).https.onCall(async (_data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await servicesFns.getUserReservations(uid);
+  } catch (err) { handleError(err); }
+});
+
+// ── REPORTS ───────────────────────────────────────────────────────────────────
+
+exports.reportContent = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await reportsFns.reportContent(uid, data);
   } catch (err) { handleError(err); }
 });
 
