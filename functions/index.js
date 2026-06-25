@@ -86,6 +86,13 @@ exports.verifyEmailCode = functions.runWith(runtimeOpts).https.onCall(async (dat
   } catch (err) { handleError(err); }
 });
 
+exports.initSocialProfile = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  try {
+    return await authFns.initSocialProfile(uid, data);
+  } catch (err) { handleError(err); }
+});
+
 // ── MATCHING ──────────────────────────────────────────────────────────────────
 
 /** @type {functions.HttpsFunction} */

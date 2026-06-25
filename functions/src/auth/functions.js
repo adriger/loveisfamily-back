@@ -109,7 +109,10 @@ async function updateUserProfile(userId, data) {
   const userDoc = await userRef.get();
   if (!userDoc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'User not found' };
 
-  const allowedFields = ['displayName', 'bio', 'interests', 'location', 'age', 'gender', 'photoURL'];
+  const allowedFields = [
+    'displayName', 'bio', 'interests', 'location', 'age', 'gender', 'photoURL',
+    'consent_privacy_version', 'consent_terms_version', 'consent_accepted_at',
+  ];
   const updates = {};
 
   for (const key of allowedFields) {
@@ -135,6 +138,42 @@ async function updateUserProfile(userId, data) {
   await userRef.update(updates);
 
   console.info(`Profile updated: userId=${userId} fields=${Object.keys(updates).join(',')}`);
+}
+
+/**
+ * Creates a Firestore profile for a user who signed in via social provider (Google/Apple).
+ * Uses Admin SDK so it bypasses Firestore security rules.
+ * @param {string} userId
+ * @param {object} data - { email, displayName, photoURL }
+ * @returns {Promise<void>}
+ */
+async function initSocialProfile(userId, { email = '', displayName = '', photoURL = null } = {}) {
+  if (!userId) throw { code: ERROR_CODES.INVALID_INPUT, message: 'User ID is required' };
+
+  const userRef = db.collection('users').doc(userId);
+  const userDoc = await userRef.get();
+  if (userDoc.exists) return; // already created, nothing to do
+
+  const now = FieldValue.serverTimestamp();
+  await userRef.set({
+    id: userId,
+    email,
+    username: '',
+    displayName: displayName || '',
+    photoURL: photoURL || null,
+    bio: '',
+    interests: [],
+    subscription_type: SUBSCRIPTION_TIERS.FREE,
+    subscription_end_date: null,
+    location: null,
+    age: null,
+    gender: null,
+    created_at: now,
+    updated_at: now,
+  });
+
+  await setCustomClaims(userId, { subscription_type: SUBSCRIPTION_TIERS.FREE });
+  console.info(`Social profile created: uid=${userId}`);
 }
 
 /**
@@ -235,4 +274,4 @@ async function verifyEmailCode(userId, code) {
   return { success: true };
 }
 
-module.exports = { createUser, updateUserProfile, deleteUserAccount, sendVerificationCode, verifyEmailCode };
+module.exports = { createUser, updateUserProfile, deleteUserAccount, sendVerificationCode, verifyEmailCode, initSocialProfile };
