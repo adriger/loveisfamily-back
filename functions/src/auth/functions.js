@@ -133,7 +133,7 @@ async function updateUserProfile(userId, data) {
 
   const allowedFields = [
     'username', 'displayName', 'bio', 'interests', 'location', 'age', 'gender',
-    'photoURL', 'photos',
+    'photoURL', 'photos', 'composition',
     'consent_privacy_version', 'consent_terms_version', 'consent_accepted_at',
   ];
   const updates = {};
@@ -156,6 +156,12 @@ async function updateUserProfile(userId, data) {
   if (updates.photos !== undefined) {
     if (!Array.isArray(updates.photos) || updates.photos.length > 5) {
       throw { code: ERROR_CODES.INVALID_INPUT, message: 'Photos must be an array of max 5 items' };
+    }
+  }
+
+  if (updates.composition !== undefined) {
+    if (typeof updates.composition !== 'object' || Array.isArray(updates.composition)) {
+      throw { code: ERROR_CODES.INVALID_INPUT, message: 'Composition must be an object' };
     }
   }
 
