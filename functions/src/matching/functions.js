@@ -23,7 +23,16 @@ async function getMatchingSuggestions(userId, limit = 10) {
   const tier = user.subscription_type || SUBSCRIPTION_TIERS.FREE;
   const tierLimits = TIER_LIMITS[tier];
 
-  // Check cache first
+  // Get already-matched user IDs to exclude — must happen before cache check
+  const [existingMatches1, existingMatches2] = await Promise.all([
+    db.collection('matches').where('user1_id', '==', userId).get(),
+    db.collection('matches').where('user2_id', '==', userId).get(),
+  ]);
+  const excludedIds = new Set([userId]);
+  existingMatches1.docs.forEach(d => excludedIds.add(d.data().user2_id));
+  existingMatches2.docs.forEach(d => excludedIds.add(d.data().user1_id));
+
+  // Check cache, filtering out already-matched users
   const cacheRef = db.collection('match_cache').doc(userId);
   const cacheDoc = await cacheRef.get();
   const cacheAge = cacheDoc.exists
@@ -35,7 +44,7 @@ async function getMatchingSuggestions(userId, limit = 10) {
                    24 * 3600 * 1000;
 
   if (cacheDoc.exists && cacheAge < CACHE_TTL) {
-    const cached = cacheDoc.data().suggestions || [];
+    const cached = (cacheDoc.data().suggestions || []).filter(s => !excludedIds.has(s.user_id));
     return cached.slice(0, limit);
   }
 
@@ -51,15 +60,6 @@ async function getMatchingSuggestions(userId, limit = 10) {
   }
 
   const candidatesSnap = await query.get();
-
-  // Get already-matched user IDs to exclude
-  const [existingMatches1, existingMatches2] = await Promise.all([
-    db.collection('matches').where('user1_id', '==', userId).get(),
-    db.collection('matches').where('user2_id', '==', userId).get(),
-  ]);
-  const excludedIds = new Set([userId]);
-  existingMatches1.docs.forEach(d => excludedIds.add(d.data().user2_id));
-  existingMatches2.docs.forEach(d => excludedIds.add(d.data().user1_id));
 
   // Score candidates
   const suggestions = [];
