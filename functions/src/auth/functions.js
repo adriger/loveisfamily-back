@@ -56,6 +56,7 @@ async function createUser(email, password, username) {
     username,
     displayName: username,
     photoURL: null,
+    photos: [],
     bio: '',
     interests: [],
     subscription_type: SUBSCRIPTION_TIERS.FREE,
@@ -117,6 +118,7 @@ async function updateUserProfile(userId, data) {
       username: '',
       displayName: authUser.displayName || '',
       photoURL: authUser.photoURL || null,
+      photos: authUser.photoURL ? [authUser.photoURL] : [],
       bio: '',
       interests: [],
       subscription_type: SUBSCRIPTION_TIERS.FREE,
@@ -130,7 +132,8 @@ async function updateUserProfile(userId, data) {
   }
 
   const allowedFields = [
-    'displayName', 'bio', 'interests', 'location', 'age', 'gender', 'photoURL',
+    'username', 'displayName', 'bio', 'interests', 'location', 'age', 'gender',
+    'photoURL', 'photos',
     'consent_privacy_version', 'consent_terms_version', 'consent_accepted_at',
   ];
   const updates = {};
@@ -147,6 +150,12 @@ async function updateUserProfile(userId, data) {
   if (updates.interests !== undefined) {
     if (!Array.isArray(updates.interests) || updates.interests.length > 20) {
       throw { code: ERROR_CODES.INVALID_INPUT, message: 'Interests must be an array of max 20 items' };
+    }
+  }
+
+  if (updates.photos !== undefined) {
+    if (!Array.isArray(updates.photos) || updates.photos.length > 5) {
+      throw { code: ERROR_CODES.INVALID_INPUT, message: 'Photos must be an array of max 5 items' };
     }
   }
 
@@ -181,6 +190,7 @@ async function initSocialProfile(userId, { email = '', displayName = '', photoUR
     username: '',
     displayName: displayName || '',
     photoURL: photoURL || null,
+    photos: photoURL ? [photoURL] : [],
     bio: '',
     interests: [],
     subscription_type: SUBSCRIPTION_TIERS.FREE,
