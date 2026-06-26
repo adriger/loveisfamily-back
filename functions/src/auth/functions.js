@@ -107,7 +107,27 @@ async function updateUserProfile(userId, data) {
 
   const userRef = db.collection('users').doc(userId);
   const userDoc = await userRef.get();
-  if (!userDoc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'User not found' };
+
+  // Autocrea el documento si no existe (usuarios Apple/Google cuyo initSocialProfile aún no completó)
+  if (!userDoc.exists) {
+    const authUser = await admin.auth().getUser(userId);
+    await userRef.set({
+      id: userId,
+      email: authUser.email || '',
+      username: '',
+      displayName: authUser.displayName || '',
+      photoURL: authUser.photoURL || null,
+      bio: '',
+      interests: [],
+      subscription_type: SUBSCRIPTION_TIERS.FREE,
+      subscription_end_date: null,
+      location: null,
+      age: null,
+      gender: null,
+      created_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+  }
 
   const allowedFields = [
     'displayName', 'bio', 'interests', 'location', 'age', 'gender', 'photoURL',
