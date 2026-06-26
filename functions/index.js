@@ -30,6 +30,9 @@ const runtimeOpts = {
   memory: FUNCTION_CONFIG.MEMORY,
 };
 
+// Helper para crear funciones en europe-west1 con las opciones estándar
+const fn = () => functions.region('europe-west1').runWith(runtimeOpts);
+
 function handleError(err) {
   if (err.code && err.message) {
     throw new functions.https.HttpsError('failed-precondition', err.message, { code: err.code });
@@ -48,14 +51,14 @@ function requireAuth(context) {
 // ── AUTH ─────────────────────────────────────────────────────────────────────
 
 /** @type {functions.HttpsFunction} */
-exports.createUser = functions.runWith(runtimeOpts).https.onCall(async (data) => {
+exports.createUser = fn().https.onCall(async (data) => {
   try {
     return await authFns.createUser(data.email, data.password, data.username);
   } catch (err) { handleError(err); }
 });
 
 /** @type {functions.HttpsFunction} */
-exports.updateUserProfile = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.updateUserProfile = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await authFns.updateUserProfile(uid, data);
@@ -63,21 +66,21 @@ exports.updateUserProfile = functions.runWith(runtimeOpts).https.onCall(async (d
 });
 
 /** @type {functions.HttpsFunction} */
-exports.deleteUserAccount = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.deleteUserAccount = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await authFns.deleteUserAccount(uid);
   } catch (err) { handleError(err); }
 });
 
-exports.sendVerificationCode = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.sendVerificationCode = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await authFns.sendVerificationCode(uid);
   } catch (err) { handleError(err); }
 });
 
-exports.verifyEmailCode = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.verifyEmailCode = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   const { code } = data;
   if (!code) throw new functions.https.HttpsError('invalid-argument', 'Code required');
@@ -86,7 +89,7 @@ exports.verifyEmailCode = functions.runWith(runtimeOpts).https.onCall(async (dat
   } catch (err) { handleError(err); }
 });
 
-exports.initSocialProfile = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.initSocialProfile = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await authFns.initSocialProfile(uid, data);
@@ -96,7 +99,7 @@ exports.initSocialProfile = functions.runWith(runtimeOpts).https.onCall(async (d
 // ── MATCHING ──────────────────────────────────────────────────────────────────
 
 /** @type {functions.HttpsFunction} */
-exports.getMatchingSuggestions = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getMatchingSuggestions = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await matchingFns.getMatchingSuggestions(uid, data.limit || 10);
@@ -104,7 +107,7 @@ exports.getMatchingSuggestions = functions.runWith(runtimeOpts).https.onCall(asy
 });
 
 /** @type {functions.HttpsFunction} */
-exports.createMatch = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.createMatch = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await matchingFns.createMatch(uid, data.targetUserId, data.matchType);
@@ -112,7 +115,7 @@ exports.createMatch = functions.runWith(runtimeOpts).https.onCall(async (data, c
 });
 
 /** @type {functions.HttpsFunction} */
-exports.respondToMatch = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.respondToMatch = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await matchingFns.respondToMatch(data.matchId, uid, data.response);
@@ -120,7 +123,7 @@ exports.respondToMatch = functions.runWith(runtimeOpts).https.onCall(async (data
 });
 
 /** @type {functions.HttpsFunction} */
-exports.getMatchHistory = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getMatchHistory = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await matchingFns.getMatchHistory(uid, data.limit, data.startAfter);
@@ -129,42 +132,42 @@ exports.getMatchHistory = functions.runWith(runtimeOpts).https.onCall(async (dat
 
 // ── MESSAGING ─────────────────────────────────────────────────────────────────
 
-exports.sendMessage = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.sendMessage = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await messagingFns.sendMessage(data.conversationId, uid, data.text, data.attachments);
   } catch (err) { handleError(err); }
 });
 
-exports.getConversations = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getConversations = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await messagingFns.getConversations(uid);
   } catch (err) { handleError(err); }
 });
 
-exports.getMessages = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getMessages = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await messagingFns.getMessages(data.conversationId, uid, data.limit, data.startAfter);
   } catch (err) { handleError(err); }
 });
 
-exports.markAsRead = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.markAsRead = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await messagingFns.markAsRead(data.conversationId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.deleteMessage = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.deleteMessage = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await messagingFns.deleteMessage(data.messageId, data.conversationId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.registerPushToken = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.registerPushToken = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   const { token, platform } = data;
   try {
@@ -174,42 +177,42 @@ exports.registerPushToken = functions.runWith(runtimeOpts).https.onCall(async (d
 
 // ── COMMUNITY ─────────────────────────────────────────────────────────────────
 
-exports.createPost = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.createPost = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await communityFns.createPost(uid, data.title, data.description, data.images, data.activityType, data.tags, data.location, data.visibility);
   } catch (err) { handleError(err); }
 });
 
-exports.likePost = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.likePost = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await communityFns.likePost(data.postId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.commentOnPost = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.commentOnPost = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await communityFns.commentOnPost(data.postId, uid, data.text);
   } catch (err) { handleError(err); }
 });
 
-exports.getPostFeed = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getPostFeed = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await communityFns.getPostFeed(uid, data.filters, data.limit, data.startAfter);
   } catch (err) { handleError(err); }
 });
 
-exports.deletePost = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.deletePost = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await communityFns.deletePost(data.postId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.getPostComments = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getPostComments = fn().https.onCall(async (data, context) => {
   requireAuth(context);
   try {
     return await communityFns.getPostComments(data.postId, data.limit, data.startAfter);
@@ -218,49 +221,49 @@ exports.getPostComments = functions.runWith(runtimeOpts).https.onCall(async (dat
 
 // ── TEAMS ─────────────────────────────────────────────────────────────────────
 
-exports.createTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.createTeam = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.createTeam(uid, data.name, data.description, data.privacyType);
   } catch (err) { handleError(err); }
 });
 
-exports.inviteToTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.inviteToTeam = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.inviteToTeam(data.teamId, uid, data.invitedUserId);
   } catch (err) { handleError(err); }
 });
 
-exports.acceptTeamInvite = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.acceptTeamInvite = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.acceptTeamInvite(data.teamId, data.inviteId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.addActivityToTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.addActivityToTeam = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.addActivityToTeam(data.teamId, uid, data.activityIds);
   } catch (err) { handleError(err); }
 });
 
-exports.getTeamDetails = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getTeamDetails = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.getTeamDetails(data.teamId, uid);
   } catch (err) { handleError(err); }
 });
 
-exports.listTeams = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.listTeams = fn().https.onCall(async (data, context) => {
   requireAuth(context);
   try {
     return await teamsFns.listTeams(data.limit, data.startAfter, data.search);
   } catch (err) { handleError(err); }
 });
 
-exports.joinTeam = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.joinTeam = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await teamsFns.joinTeam(data.teamId, uid);
@@ -269,14 +272,14 @@ exports.joinTeam = functions.runWith(runtimeOpts).https.onCall(async (data, cont
 
 // ── VERIFICATION ─────────────────────────────────────────────────────────────
 
-exports.submitProfileVerification = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.submitProfileVerification = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await verificationFns.submitProfileVerification(uid, data.documentPhotoURL);
   } catch (err) { handleError(err); }
 });
 
-exports.getVerificationStatus = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.getVerificationStatus = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await verificationFns.getVerificationStatus(uid);
@@ -285,14 +288,14 @@ exports.getVerificationStatus = functions.runWith(runtimeOpts).https.onCall(asyn
 
 // ── FREEMIUM ──────────────────────────────────────────────────────────────────
 
-exports.checkSubscriptionLimits = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.checkSubscriptionLimits = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await freemiumFns.checkSubscriptionLimits(uid, data.feature);
   } catch (err) { handleError(err); }
 });
 
-exports.upgradeSubscription = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.upgradeSubscription = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await freemiumFns.upgradeSubscription(uid, data.tier, data.paymentId);
@@ -301,20 +304,20 @@ exports.upgradeSubscription = functions.runWith(runtimeOpts).https.onCall(async 
 
 // ── SERVICES & RESERVATIONS ───────────────────────────────────────────────────
 
-exports.getServices = functions.runWith(runtimeOpts).https.onCall(async (data) => {
+exports.getServices = fn().https.onCall(async (data) => {
   try {
     return await servicesFns.getServices(data);
   } catch (err) { handleError(err); }
 });
 
-exports.createReservation = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.createReservation = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await servicesFns.createReservation(uid, data);
   } catch (err) { handleError(err); }
 });
 
-exports.getUserReservations = functions.runWith(runtimeOpts).https.onCall(async (_data, context) => {
+exports.getUserReservations = fn().https.onCall(async (_data, context) => {
   const uid = requireAuth(context);
   try {
     return await servicesFns.getUserReservations(uid);
@@ -323,7 +326,7 @@ exports.getUserReservations = functions.runWith(runtimeOpts).https.onCall(async 
 
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 
-exports.reportContent = functions.runWith(runtimeOpts).https.onCall(async (data, context) => {
+exports.reportContent = fn().https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   try {
     return await reportsFns.reportContent(uid, data);
