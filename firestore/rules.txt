@@ -323,6 +323,13 @@ service cloud.firestore {
       allow write: if false; // Cloud Functions only
     }
 
+    // ─── SERVICES ────────────────────────────────────────────────────────────
+
+    match /services/{serviceId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // managed via admin panel only
+    }
+
     // ─── EMAIL VERIFICATIONS ─────────────────────────────────────────────────
 
     match /email_verifications/{userId} {
