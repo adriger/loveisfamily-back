@@ -35,7 +35,7 @@ async function getServices({ category, search, limit = 50 } = {}) {
   return services;
 }
 
-async function createReservation(userId, { serviceId, userName, userPhone, requestedDate, notes }) {
+async function createReservation(userId, { serviceId, userName, userPhone, requestedDate, requestedTime, notes }) {
   if (!userId) throw { code: ERROR_CODES.UNAUTHORIZED, message: 'Authentication required' };
   if (!serviceId || !userName || !userPhone || !requestedDate) {
     throw { code: ERROR_CODES.INVALID_INPUT, message: 'Faltan campos obligatorios' };
@@ -57,6 +57,7 @@ async function createReservation(userId, { serviceId, userName, userPhone, reque
     user_phone: userPhone,
     user_email: userEmail,
     requested_date: requestedDate,
+    requested_time: requestedTime || null,
     notes: notes || '',
     status: 'pending',
     confirmed_datetime: null,

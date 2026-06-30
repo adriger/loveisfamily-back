@@ -4,6 +4,7 @@ const { FieldValue, Timestamp } = require('@google-cloud/firestore');
 const admin = require('firebase-admin');
 const { checkSubscriptionLimits, incrementFeatureUsage } = require('../shared/freemium');
 const { ERROR_CODES, MATCH_STATUS, MATCH_TYPES, TIER_LIMITS, SUBSCRIPTION_TIERS, MATCH_EXPIRY_DAYS, MATCH_RESPONSE_DAYS } = require('../shared/constants');
+const { sendPushToUser } = require('../shared/push');
 
 const db = admin.firestore();
 
@@ -173,6 +174,15 @@ async function createMatch(userId, targetUserId, matchType = MATCH_TYPES.ALGORIT
   });
 
   await incrementFeatureUsage(userId, 'matches');
+
+  // Notificar al destinatario
+  const senderDoc = await db.collection('users').doc(userId).get();
+  const senderName = senderDoc.data()?.displayName || 'Una familia';
+  await sendPushToUser(db, targetUserId, {
+    title: '💜 Nueva solicitud de conexión',
+    body: `${senderName} quiere conectar contigo`,
+  }, { type: 'new_match', matchId: matchRef.id });
+
   console.info(`Match created: matchId=${matchRef.id} user1=${userId} user2=${targetUserId}`);
   return { matchId: matchRef.id };
 }
@@ -190,13 +200,14 @@ async function respondToMatch(matchId, userId, response) {
   }
 
   const matchRef = db.collection('matches').doc(matchId);
+  let matchData = null;
 
-  return db.runTransaction(async (t) => {
+  const result = await db.runTransaction(async (t) => {
     const matchDoc = await t.get(matchRef);
     if (!matchDoc.exists) throw { code: ERROR_CODES.NOT_FOUND, message: 'Match not found' };
 
-    const match = matchDoc.data();
-    if (match.user1_id !== userId && match.user2_id !== userId) {
+    matchData = matchDoc.data();
+    if (matchData.user1_id !== userId && matchData.user2_id !== userId) {
       throw { code: ERROR_CODES.PERMISSION_DENIED, message: 'Not a participant of this match' };
     }
 
@@ -205,19 +216,17 @@ async function respondToMatch(matchId, userId, response) {
       return { status: MATCH_STATUS.REJECTED };
     }
 
-    // Accept logic
-    if (match.status === MATCH_STATUS.PENDING && match.user1_id === userId) {
-      t.update(matchRef, { status: MATCH_STATUS.ACCEPTED, updated_at: FieldValue.serverTimestamp() });
-      return { status: MATCH_STATUS.ACCEPTED };
-    }
+    // User2 aceptando → match mutuo directo (user1 ya expresó interés al crear el match)
+    const shouldMutualMatch =
+      (matchData.status === MATCH_STATUS.PENDING && matchData.user2_id === userId) ||
+      (matchData.status === MATCH_STATUS.ACCEPTED && matchData.user2_id === userId);
 
-    if (match.status === MATCH_STATUS.ACCEPTED && match.user2_id === userId) {
-      // Mutual match — create conversation
+    if (shouldMutualMatch) {
       const convRef = db.collection('conversations').doc();
       t.set(convRef, {
         id: convRef.id,
-        participant1_id: match.user1_id,
-        participant2_id: match.user2_id,
+        participant1_id: matchData.user1_id,
+        participant2_id: matchData.user2_id,
         last_message_text: null,
         last_message_timestamp: null,
         unread_count_p1: 0,
@@ -234,8 +243,36 @@ async function respondToMatch(matchId, userId, response) {
       return { status: MATCH_STATUS.MUTUAL_MATCH, conversationId: convRef.id };
     }
 
+    // User1 confirmando su propia solicitud (flujo algorítmico de 2 pasos)
+    if (matchData.status === MATCH_STATUS.PENDING && matchData.user1_id === userId) {
+      t.update(matchRef, { status: MATCH_STATUS.ACCEPTED, updated_at: FieldValue.serverTimestamp() });
+      return { status: MATCH_STATUS.ACCEPTED };
+    }
+
     throw { code: ERROR_CODES.INVALID_INPUT, message: 'Invalid match state for this action' };
   });
+
+  // Push notifications tras match mutuo
+  if (result.status === MATCH_STATUS.MUTUAL_MATCH && matchData) {
+    const [user1Doc, user2Doc] = await Promise.all([
+      db.collection('users').doc(matchData.user1_id).get(),
+      db.collection('users').doc(matchData.user2_id).get(),
+    ]);
+    const name1 = user1Doc.data()?.displayName || 'Una familia';
+    const name2 = user2Doc.data()?.displayName || 'Una familia';
+    await Promise.all([
+      sendPushToUser(db, matchData.user1_id, {
+        title: '🎉 ¡Tenéis un match!',
+        body: `${name2} ha aceptado tu solicitud. ¡Ya podéis chatear!`,
+      }, { type: 'mutual_match', conversationId: result.conversationId }),
+      sendPushToUser(db, matchData.user2_id, {
+        title: '🎉 ¡Tenéis un match!',
+        body: `${name1} y tú habéis conectado. ¡Ya podéis chatear!`,
+      }, { type: 'mutual_match', conversationId: result.conversationId }),
+    ]);
+  }
+
+  return result;
 }
 
 /**
@@ -245,24 +282,27 @@ async function respondToMatch(matchId, userId, response) {
  * @param {string|null} startAfter - Last document ID for pagination
  * @returns {Promise<{ matches: Array, nextCursor: string|null }>}
  */
-async function getMatchHistory(userId, limit = 20, startAfter = null) {
-  let query = db.collection('matches')
-    .where('user1_id', '==', userId)
-    .orderBy('created_at', 'desc')
-    .limit(limit + 1);
+async function getMatchHistory(userId, limit = 20) {
+  const [snap1, snap2] = await Promise.all([
+    db.collection('matches')
+      .where('user1_id', '==', userId)
+      .orderBy('created_at', 'desc')
+      .limit(limit).get(),
+    db.collection('matches')
+      .where('user2_id', '==', userId)
+      .orderBy('created_at', 'desc')
+      .limit(limit).get(),
+  ]);
 
-  if (startAfter) {
-    const cursorDoc = await db.collection('matches').doc(startAfter).get();
-    if (cursorDoc.exists) query = query.startAfter(cursorDoc);
-  }
-
-  const snap = await query.get();
-  const docs = snap.docs.slice(0, limit);
-  const nextCursor = snap.docs.length > limit ? docs[docs.length - 1].id : null;
+  const seen = new Set();
+  const merged = [...snap1.docs, ...snap2.docs]
+    .filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
+    .sort((a, b) => (b.data().created_at?.toMillis() || 0) - (a.data().created_at?.toMillis() || 0))
+    .slice(0, limit);
 
   return {
-    matches: docs.map(d => d.data()),
-    nextCursor,
+    matches: merged.map(d => d.data()),
+    nextCursor: null,
   };
 }
 

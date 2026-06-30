@@ -336,5 +336,15 @@ service cloud.firestore {
       allow read, write: if false; // only accessible via Admin SDK (Cloud Functions)
     }
 
+    // ─── REPORTS ─────────────────────────────────────────────────────────────
+
+    match /reports/{reportId} {
+      allow read: if false; // admin only
+      allow create: if isAuthenticated()
+        && request.resource.data.reporter_id == request.auth.uid
+        && request.resource.data.reason is string;
+      allow update, delete: if false;
+    }
+
   }
 }

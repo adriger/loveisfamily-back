@@ -4,6 +4,7 @@ const { FieldValue, Timestamp } = require('@google-cloud/firestore');
 const admin = require('firebase-admin');
 const { validateText, validateAttachments } = require('../shared/validators');
 const { ERROR_CODES, PAGINATION, MESSAGE_EDIT_HOURS } = require('../shared/constants');
+const { sendExpoPush } = require('../shared/push');
 
 const db = admin.firestore();
 
@@ -63,28 +64,25 @@ async function sendMessage(conversationId, senderId, text, attachments = []) {
 
   try {
     const recipientId = conv.participant1_id === senderId ? conv.participant2_id : conv.participant1_id;
-    const recipientDoc = await db.collection('users').doc(recipientId).get();
-    const recipientData = recipientDoc.data();
-    const tokens = recipientData?.fcm_tokens || [];
 
-    if (tokens.length > 0) {
-      const senderDoc = await db.collection('users').doc(senderId).get();
-      const senderName = senderDoc.data()?.displayName || 'Alguien';
+    // Skip push if recipient has muted this conversation
+    const isMuted = Array.isArray(conv.muted_by) && conv.muted_by.includes(recipientId);
+    if (!isMuted) {
+      const recipientDoc = await db.collection('users').doc(recipientId).get();
+      const recipientData = recipientDoc.data();
+      const tokens = recipientData?.fcm_tokens || [];
 
-      const notification = {
-        title: senderName,
-        body: text.length > 100 ? text.slice(0, 97) + '...' : text,
-      };
+      if (tokens.length > 0) {
+        const senderDoc = await db.collection('users').doc(senderId).get();
+        const senderName = senderDoc.data()?.displayName || 'Alguien';
 
-      const messaging = admin.messaging();
-      await Promise.allSettled(
-        tokens.map(token => messaging.send({
-          token,
-          notification,
-          data: { conversationId, type: 'new_message' },
-          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
-        }))
-      );
+        const notification = {
+          title: senderName,
+          body: text.length > 100 ? text.slice(0, 97) + '...' : text,
+        };
+
+        await sendExpoPush(tokens, notification, { conversationId, type: 'new_message' });
+      }
     }
   } catch (pushErr) {
     console.warn('Push notification failed:', pushErr.message);
