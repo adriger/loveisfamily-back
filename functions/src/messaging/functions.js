@@ -81,7 +81,14 @@ async function sendMessage(conversationId, senderId, text, attachments = []) {
           body: text.length > 100 ? text.slice(0, 97) + '...' : text,
         };
 
-        await sendExpoPush(tokens, notification, { conversationId, type: 'new_message' });
+        const senderPhoto = senderDoc.data()?.photoURL || '';
+        await sendExpoPush(tokens, notification, {
+          type: 'new_message',
+          conversationId,
+          participantId: senderId,
+          participantName: senderName,
+          participantPhotoURL: senderPhoto,
+        });
       }
     }
   } catch (pushErr) {
